@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from config import TrainArgs
 import torch.nn as nn
-from utils import PreDataset, data_preprocess, master_print, master_save, format_time, RandomVariableForTraining, load_data
+from utils import PreDataset, data_preprocess, master_print, master_save, format_time, RandomVariableForTraining
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 from torch import autocast
@@ -73,7 +73,7 @@ def pre_train(args: TrainArgs, brant2, head, optimizer, scheduler, rand_var_for_
         for rv in train_rv:
             # rv: (file path, augmentation rate, channel number)
             read_data_start = time.time()
-            data = load_data(rv[0])
+            data = np.load(rv[0])
             lb_data, fore_data = data_preprocess(args, data, rv[1], rv[2])
             dataset = PreDataset(lb_data, fore_data, block=args.block, rank=args.local_rank)
             bsz = args.batch_size // lb_data.shape[0]

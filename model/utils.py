@@ -139,53 +139,6 @@ class Embedding(nn.Module):
         return emb
 
 
-class VanillaEmbedding(nn.Module):
-    def __init__(self, args: ModelArgs, do_mask):
-        super(VanillaEmbedding, self).__init__()
-        self.mask_ratio = args.mask_ratio
-        self.do_mask = do_mask
-
-        out_dim = args.d_model // 2
-        # self.tcn = TemporalConvNet(num_inputs=1, num_channels=[out_dim // 2, out_dim])
-        self.tcn = ConvNet(num_inputs=1, num_channels=[out_dim // 2, out_dim])
-        self.proj1 = nn.Linear(out_dim, out_dim)
-        self.norm1 = LayerNorm(d_model=out_dim)
-
-        self.cnn = ConvNet(num_inputs=1, num_channels=[out_dim // 2, out_dim])
-        self.proj2 = nn.Linear(out_dim, out_dim)
-        self.norm2 = LayerNorm(d_model=out_dim)
-        # learnable positional encoding
-        self.positional_encoding = nn.Parameter(torch.randn(args.seq_len, args.d_model), requires_grad=True)
-        self.mask_encoding = nn.Parameter(torch.randn(args.d_model), requires_grad=True) if args.learnable_mask else \
-                             nn.Parameter(torch.zeros(args.d_model), requires_grad=False)
-
-    def forward(self, x, psd):
-        # x: [batch_size, ch_num, seq_len, patch_len]
-        batch_size, ch_num, seq_len, patch_len = x.shape
-
-        x = x.reshape(batch_size*ch_num*seq_len, 1, patch_len)
-        t_emb = self.tcn(x)
-        t_emb = torch.mean(t_emb, dim=-1).reshape(batch_size, ch_num*seq_len, -1)
-        t_emb = self.norm1(self.proj1(t_emb))
-
-        psd = psd.reshape(batch_size*ch_num*seq_len, 1, -1)
-        psd_emb = self.cnn(psd)
-        psd_emb = torch.mean(psd_emb, dim=-1).reshape(batch_size, ch_num*seq_len, -1)
-        psd_emb = self.norm2(self.proj2(psd_emb))
-        emb = torch.concat([t_emb, psd_emb], dim=-1)
-
-        # mask
-        if self.do_mask:
-            mask_num = int(ch_num*seq_len*self.mask_ratio)
-            mask_pos = np.random.permutation(ch_num*seq_len)[:mask_num]
-            emb[:, mask_pos, :] = self.mask_encoding
-
-        emb = emb.reshape(batch_size*ch_num, seq_len, -1)
-        emb += self.positional_encoding
-
-        return emb
-
-
 class PredictHead(nn.Module):
     def __init__(self, args: ModelArgs, patch_len, forecast_len):
         super(PredictHead, self).__init__()
@@ -202,25 +155,11 @@ class PredictHead(nn.Module):
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, args: ModelArgs, num_class, num_channel, hidden):
+    def __init__(self, args: ModelArgs, num_class, num_channel):
         super(ClassificationHead, self).__init__()
         self.d_model = args.d_model // 4 if num_channel > 1 else args.d_model
         self.cnn = ConvNet(num_inputs=num_channel, num_channels=[self.d_model])
-        if hidden:
-            hidden_dim = 2*(self.d_model+num_class) // 3
-            self.head = nn.Sequential(
-                nn.Linear(self.d_model, hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(args.drop_prob),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(args.drop_prob),
-                nn.Linear(hidden_dim, num_class)
-            )
-        else:
-            self.head = nn.Linear(self.d_model, num_class)
-
-        # self.softmax = nn.Softmax(dim=-1)
+        self.head = nn.Linear(self.d_model, num_class)
 
     def forward(self, x):
         bsz, ch_num, d_model = x.shape
@@ -229,7 +168,6 @@ class ClassificationHead(nn.Module):
             x = torch.mean(x, dim=-1)
         else:
             x = torch.squeeze(x, dim=1)
-        # x = torch.mean(x, dim=1)
         logit = self.head(x)
 
         return logit  # [bsz, num_class]
@@ -287,10 +225,6 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
-
-
-#
-#
 class MultiHeadAttention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()

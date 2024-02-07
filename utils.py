@@ -12,7 +12,7 @@ import torch.optim as optim
 from lion_pytorch import Lion
 from model.config import ModelArgs
 from model.encoder import Brant2Encoder
-from model.utils import PredictHead
+from model.utils import PredictHead, ClassificationHead
 from config import TrainArgs
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -285,19 +285,35 @@ def get_scheduler(optimizer, scheduler_name, lr):
     return scheduler
 
 
-def load_data(data_file):
-    if ',' in data_file:
-        data_file, label_file = data_file.split(',')
-        data = delete_neg_label(data_file, label_file)
-    else:
-        data = np.load(data_file)
-
-    return data
-
-
 def format_time(seconds):
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     seconds = seconds % 60
 
     return f"{hours}h {minutes}min {seconds}s"
+
+
+def load_model(model_args, state_dict_path, out_dim, gpu_id, load_pre_train=True, channel_num=1):
+    brant2 = Brant2Encoder(model_args, do_mask=False).to(gpu_id)
+    if load_pre_train:
+        brant2_state_dict = torch.load(state_dict_path, map_location=f'cuda:{gpu_id}')
+        brant2.load_state_dict(brant2_state_dict)
+
+    head = ClassificationHead(model_args, out_dim, channel_num).to(gpu_id)
+
+    return brant2, head
+
+
+def freeze_params(model_args, brant2, act_time=0, act_channel=0):
+    act_time_layers = list(range(model_args.time_n_layers))[-act_time:] if act_time > 0 else []
+    act_channel_layers = list(range(model_args.channel_n_layers))[-act_channel:] if act_channel > 0 else []
+    for name, p in brant2.named_parameters():
+        name_list = name.split('.')
+        if (name_list[0] == 'time_encoder' and int(name_list[2]) in act_time_layers) or \
+           (name_list[0] == 'channel_encoder' and int(name_list[2]) in act_channel_layers):
+            p.requires_grad = True
+        else:
+            p.requires_grad = False
+
+    return brant2
+
