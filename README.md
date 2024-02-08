@@ -6,4 +6,4 @@ The program entry of the pre-training process is in `main.py`
 
 `usage.py` is an example of fine-tuning the pre-trained Brant-2 on your dataset.
 
-The pre-trained weights of Brant-2 can be downloaded at: [pre-trained weights][https://drive.google.com/file/d/1-le0yd7oaNa99O1VpydPoxbXfR7-NHRv/view?usp=sharing].
+The pre-trained weights of Brant-2 can be downloaded at: [pre-trained weights](https://drive.google.com/file/d/1-le0yd7oaNa99O1VpydPoxbXfR7-NHRv/view?usp=sharing).
